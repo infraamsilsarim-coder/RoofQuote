@@ -1,0 +1,7 @@
+{% if out.status == 'completed' %}
+<span class="text-green-700 text-sm font-medium">Ready — <a href="/outputs/{{ out.id }}/download" class="underline">Download</a></span>
+{% elif out.status == 'failed' %}
+<span class="text-red-700 text-sm">Failed</span>
+{% else %}
+<span class="text-amber-700 text-sm">Working… ({{ out.status }})</span>
+{% endif %}

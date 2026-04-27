@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Projects — RoofQuote AI{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold text-slate-800 mb-2">Projects</h1>
+<p class="text-slate-600 mb-6">Create a new estimate project or open an existing one.</p>
+
+<div class="grid md:grid-cols-2 gap-8 mb-10">
+  <div class="bg-white rounded-lg border border-slate-200 p-5 shadow-sm">
+    <h2 class="font-semibold text-slate-800 mb-3">New project</h2>
+    <form method="post" action="/projects" class="space-y-3">
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">Project name</label>
+        <input name="name" class="w-full border border-slate-300 rounded px-3 py-2" placeholder="e.g. Sacramento flat roof" required />
+      </div>
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">Display code (optional)</label>
+        <input name="display_code" class="w-full border border-slate-300 rounded px-3 py-2" placeholder="e.g. CC337" />
+      </div>
+      <button type="submit" class="bg-red-700 hover:bg-red-800 text-white px-4 py-2 rounded font-medium">Create &amp; open</button>
+    </form>
+  </div>
+  <div class="bg-white rounded-lg border border-slate-200 p-5 shadow-sm">
+    <h2 class="font-semibold text-slate-800 mb-3">Master pricing versions</h2>
+    <p class="text-sm text-slate-600 mb-3">Upload and manage workbooks on the Master Pricing page.</p>
+    <a href="/master-pricing" class="text-red-700 font-medium hover:underline">Open Master Pricing Data →</a>
+    {% if master_versions %}
+    <ul class="mt-3 text-sm text-slate-700 list-disc list-inside max-h-40 overflow-y-auto">
+      {% for v in master_versions[:8] %}
+      <li>#{{ v.id }} — {{ v.label or v.original_filename }} ({{ v.created_reason }})</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</div>
+
+<div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+  <div class="p-4 border-b border-slate-200">
+    <h2 class="font-semibold text-slate-800">Your projects</h2>
+    <p class="text-sm text-slate-600 mt-1">Click a project name to open it. Use <strong class="font-medium text-slate-700">Inputs</strong> for photos, PDFs, and Generate; use <strong class="font-medium text-slate-700">Results</strong> for finished estimates and downloads.</p>
+  </div>
+  {% if projects %}
+  <table class="w-full text-left text-sm">
+    <thead class="bg-slate-50 text-slate-600">
+      <tr>
+        <th class="p-3">Name</th>
+        <th class="p-3">Code</th>
+        <th class="p-3">Created</th>
+        <th class="p-3">Open</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in projects %}
+      <tr class="border-t border-slate-100 hover:bg-slate-50">
+        <td class="p-3 font-medium">
+          <a href="/projects/{{ p.id }}/inputs" class="text-slate-900 hover:text-red-700 hover:underline focus:outline-none focus:ring-2 focus:ring-red-500 rounded">{{ p.name }}</a>
+        </td>
+        <td class="p-3 text-slate-600">{{ p.display_code or "—" }}</td>
+        <td class="p-3 text-slate-500">{{ p.created_at.strftime("%Y-%m-%d") if p.created_at else "" }}</td>
+        <td class="p-3">
+          <div class="flex flex-wrap gap-x-3 gap-y-1">
+            <a href="/projects/{{ p.id }}/inputs" class="text-red-700 font-medium hover:underline">Inputs</a>
+            <a href="/projects/{{ p.id }}/results" class="text-slate-700 font-medium hover:underline">Results</a>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="p-6 text-slate-500">No projects yet. Create one to get started.</p>
+  {% endif %}
+</div>
+{% endblock %}

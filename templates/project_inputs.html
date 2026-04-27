@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} — Inputs{% endblock %}
+{% block content %}
+<div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-slate-800">{{ project.name }}</h1>
+    <p class="text-slate-500 text-sm">Project inputs &amp; master pricing</p>
+  </div>
+  <div class="flex gap-2">
+    <a href="/projects/{{ project.id }}/results" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 text-sm">Generated results</a>
+    <a href="/" class="px-4 py-2 text-slate-600 text-sm hover:underline">← All projects</a>
+  </div>
+</div>
+
+{% if flash_err %}
+<div class="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">{{ flash_err }}</div>
+{% endif %}
+
+{# Empty form element: fields link via form="project-generate-form" so master finalize can sit between them without nesting. #}
+<form id="project-generate-form" method="post" action="/projects/{{ project.id }}/generate" enctype="multipart/form-data"></form>
+
+<div class="space-y-8">
+  <section class="bg-white rounded-lg border border-slate-200 p-5 shadow-sm">
+    <h2 class="font-semibold text-slate-800 mb-3">1. Site photos (max 25)</h2>
+    <p class="text-sm text-slate-600 mb-2">Upload new photos to replace the current set, or leave empty to keep existing.</p>
+    <input id="site-photos-input" form="project-generate-form" type="file" name="photos" accept="image/*" multiple class="text-sm" />
+    <p id="photo-preview-hint" class="hidden text-xs text-slate-500 mt-3 mb-1">Preview (first 25 images) — they are sent when you generate.</p>
+    <div id="site-photos-preview" class="flex flex-wrap gap-2 mt-1"></div>
+    {% if photos %}
+    <p class="text-xs text-slate-500 mt-4 mb-1">Saved on this project</p>
+    <div class="flex flex-wrap gap-2">
+      {% for p in photos %}
+      <div class="border border-slate-200 rounded overflow-hidden w-28 h-28 bg-slate-100">
+        <img src="/projects/{{ project.id }}/photos/{{ p.id }}/view" alt="" class="w-full h-full object-cover" />
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="bg-white rounded-lg border border-slate-200 p-5 shadow-sm">
+    <h2 class="font-semibold text-slate-800 mb-3">2. iRoof PDF</h2>
+    <input form="project-generate-form" type="file" name="iroof_pdf" accept=".pdf" class="text-sm" />
+    {% if iroof %}
+    <p class="text-sm text-green-700 mt-2">On file: {{ iroof.filename }}</p>
+    {% endif %}
+  </section>
+
+  <section class="bg-white rounded-lg border border-slate-200 p-5 shadow-sm">
+    <h2 class="font-semibold text-slate-800 mb-4">3. Master version for this estimate</h2>
+
+    <div id="master-pricing-tools" class="border border-slate-200 rounded-lg p-4 bg-slate-50/80 mb-5">
+      <h3 class="font-semibold text-slate-800 mb-3 text-base">Master pricing (.xlsx) — load or upload</h3>
+      <p class="text-sm text-slate-600 mb-4">Load a version into the grid editor or upload a new workbook. These actions save on the server and reload this page (they are not part of the Generate button).</p>
+      <div class="space-y-4">
+        {% if master_versions %}
+        <div class="flex flex-wrap gap-2 items-end">
+          <select id="master-load-version-id" class="border border-slate-300 rounded px-3 py-2 text-sm bg-white" aria-label="Version to load into editor">
+            {% for v in master_versions %}
+            <option value="{{ v.id }}">#{{ v.id }} — {{ v.label[:40] }}</option>
+            {% endfor %}
+          </select>
+          <button type="button" id="master-load-submit" class="bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded text-sm">Load into editor</button>
+        </div>
+        {% else %}
+        <p class="text-sm text-slate-500">No master pricing files yet. Upload an .xlsx here or from Master Pricing Data in the sidebar.</p>
+        {% endif %}
+
+        {% if nrows > 0 and ncols > 0 %}
+        <div class="rounded-lg border border-slate-200 overflow-hidden bg-white">
+          <div class="px-3 py-2 bg-slate-100 border-b border-slate-200">
+            <h3 class="font-semibold text-slate-800 text-sm">Master pricing editor (first sheet)</h3>
+            <p class="text-xs text-slate-600 mt-0.5">Scroll inside the box below. <strong>Finalize master pricing</strong> is always visible under the sheet.</p>
+          </div>
+          <form id="master-finalize-form" method="post" action="/projects/{{ project.id }}/master/finalize">
+            <input type="hidden" name="nrows" value="{{ nrows }}" />
+            <input type="hidden" name="ncols" value="{{ ncols }}" />
+            <div class="overflow-auto max-h-[360px]">
+              <table class="text-xs border-collapse w-full">
+                {% for r in range(nrows) %}
+                <tr>
+                  {% for c in range(ncols) %}
+                  <td class="border border-slate-200 p-0">
+                    <input type="text" name="cell_{{ r }}_{{ c }}" value="{{ grid[r][c] if c < grid[r]|length else '' }}"
+                      class="w-24 min-w-[5rem] px-1 py-1 border-0 focus:ring-1 focus:ring-red-500" />
+                  </td>
+                  {% endfor %}
+                </tr>
+                {% endfor %}
+              </table>
+            </div>
+          </form>
+        </div>
+        <div class="mt-2 flex justify-end">
+          <button type="submit" form="master-finalize-form" class="bg-red-700 hover:bg-red-800 text-white px-4 py-2 rounded text-sm font-medium shadow-sm">Finalize master pricing</button>
+        </div>
+        {% elif master_versions %}
+        <p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">No grid yet — pick a version and click <strong>Load into editor</strong>, or upload an .xlsx.</p>
+        {% endif %}
+
+        <div class="flex flex-col gap-2 items-start">
+          <input type="file" id="master-upload-xlsx" accept=".xlsx" class="text-sm" />
+          <button type="button" id="master-upload-submit" class="border border-slate-300 hover:bg-slate-50 px-4 py-2 rounded text-sm bg-white">Upload new &amp; select</button>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-sm text-slate-600 mb-3">Choose the workbook version used when you generate. Load or upload above updates this list and selects the new version on the server.</p>
+    <div class="flex flex-wrap gap-3 items-end">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Selected version</label>
+        <select form="project-generate-form" name="master_version_id" class="border border-slate-300 rounded px-3 py-2 text-sm min-w-[220px]">
+          <option value="">— none —</option>
+          {% for v in master_versions %}
+          <option value="{{ v.id }}" {% if project.selected_master_version_id == v.id %}selected{% endif %}>#{{ v.id }} — {{ v.label[:40] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <section class="bg-white rounded-lg border border-slate-200 p-5 shadow-sm">
+    <h2 class="font-semibold text-slate-800 mb-3">4. Additional notes <span class="text-slate-500 font-normal text-sm">(optional)</span></h2>
+    <textarea form="project-generate-form" name="notes_text" rows="5" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Prevailing wage, section notes, customer requirements…">{{ project.notes_text }}</textarea>
+    <div class="grid md:grid-cols-2 gap-4 mt-4">
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">Notes PDF (optional)</label>
+        <input form="project-generate-form" type="file" name="notes_pdf" accept=".pdf" class="text-sm" />
+        {% if notes_pdf %}<p class="text-xs text-green-700 mt-1">On file: {{ notes_pdf.filename }}</p>{% endif %}
+      </div>
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">Notes DOCX (optional)</label>
+        <input form="project-generate-form" type="file" name="notes_doc" accept=".docx" class="text-sm" />
+        {% if notes_docx %}<p class="text-xs text-green-700 mt-1">On file: {{ notes_docx.filename }}</p>{% endif %}
+      </div>
+    </div>
+    <div class="mt-4">
+      <label class="block text-xs text-slate-500 mb-1">Display code (Excel header)</label>
+      <input form="project-generate-form" name="display_code" value="{{ project.display_code or '' }}" class="border border-slate-300 rounded px-3 py-2 text-sm" placeholder="CC337" />
+    </div>
+  </section>
+
+  <div class="border-t border-slate-200 pt-6">
+    <button type="submit" form="project-generate-form" class="bg-red-700 hover:bg-red-800 text-white text-lg font-semibold px-8 py-3 rounded-lg shadow">
+      Generate estimate
+    </button>
+    <p class="text-sm text-slate-500 mt-2">All inputs above are saved automatically, then the AI runs on each photo (may take several minutes). Results appear on the Results tab.</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  var input = document.getElementById("site-photos-input");
+  var box = document.getElementById("site-photos-preview");
+  var hint = document.getElementById("photo-preview-hint");
+  if (!input || !box) return;
+
+  var previewUrls = [];
+
+  function revokePreviewUrls() {
+    previewUrls.forEach(function (u) {
+      try {
+        URL.revokeObjectURL(u);
+      } catch (e) {}
+    });
+    previewUrls = [];
+  }
+
+  function setInputFiles(files) {
+    var dt = new DataTransfer();
+    files.slice(0, 25).forEach(function (f) {
+      dt.items.add(f);
+    });
+    input.files = dt.files;
+  }
+
+  function renderPreviews() {
+    revokePreviewUrls();
+    box.innerHTML = "";
+    var files = Array.prototype.slice
+      .call(input.files || [])
+      .filter(function (f) {
+        return f.type && f.type.indexOf("image/") === 0;
+      })
+      .slice(0, 25);
+
+    if (hint) hint.classList.toggle("hidden", files.length === 0);
+    if (files.length === 0) return;
+
+    files.forEach(function (file) {
+      var url = URL.createObjectURL(file);
+      previewUrls.push(url);
+
+      var wrap = document.createElement("div");
+      wrap.className =
+        "relative border border-slate-200 rounded overflow-hidden w-28 h-28 bg-slate-100 shrink-0";
+
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.setAttribute("aria-label", "Remove image");
+      btn.className =
+        "absolute top-1 right-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/75 text-xs leading-none text-white shadow hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500";
+      btn.textContent = "\u00d7";
+      btn.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        var all = Array.prototype.slice.call(input.files || []);
+        var at = -1;
+        for (var j = 0; j < all.length; j++) {
+          var f = all[j];
+          if (
+            f.name === file.name &&
+            f.size === file.size &&
+            f.lastModified === file.lastModified
+          ) {
+            at = j;
+            break;
+          }
+        }
+        if (at >= 0) all.splice(at, 1);
+        setInputFiles(all);
+        renderPreviews();
+      });
+
+      var img = document.createElement("img");
+      img.src = url;
+      img.alt = file.name || "";
+      img.className = "h-full w-full object-cover";
+
+      wrap.appendChild(btn);
+      wrap.appendChild(img);
+      box.appendChild(wrap);
+    });
+  }
+
+  input.addEventListener("change", renderPreviews);
+})();
+
+(function () {
+  var projectId = {{ project.id }};
+  var inputsUrl = "/projects/" + projectId + "/inputs";
+
+  var loadBtn = document.getElementById("master-load-submit");
+  var loadSel = document.getElementById("master-load-version-id");
+  if (loadBtn && loadSel) {
+    loadBtn.addEventListener("click", function () {
+      var v = loadSel.value || "";
+      if (!v) return;
+      var f = document.createElement("form");
+      f.method = "POST";
+      f.action = "/projects/" + projectId + "/master/load";
+      var inp = document.createElement("input");
+      inp.type = "hidden";
+      inp.name = "version_id";
+      inp.value = v;
+      f.appendChild(inp);
+      document.body.appendChild(f);
+      f.submit();
+    });
+  }
+
+  var upBtn = document.getElementById("master-upload-submit");
+  var upFile = document.getElementById("master-upload-xlsx");
+  if (upBtn && upFile) {
+    upBtn.addEventListener("click", function () {
+      if (!upFile.files || !upFile.files[0]) {
+        return;
+      }
+      var fd = new FormData();
+      fd.append("file", upFile.files[0]);
+      upBtn.disabled = true;
+      fetch("/projects/" + projectId + "/master/upload", {
+        method: "POST",
+        body: fd,
+        credentials: "same-origin",
+        redirect: "manual",
+      })
+        .then(function (r) {
+          if (r.status === 302 || r.status === 303) {
+            var loc = r.headers.get("Location");
+            window.location.href = loc || inputsUrl;
+            return;
+          }
+          if (r.status === 0) {
+            window.location.href = inputsUrl;
+            return;
+          }
+          window.location.href = inputsUrl;
+        })
+        .catch(function () {
+          window.location.href = inputsUrl;
+        });
+    });
+  }
+})();
+</script>
+{% endblock %}

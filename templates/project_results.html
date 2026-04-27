@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} — Results{% endblock %}
+{% block content %}
+<div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-slate-800">{{ project.name }}</h1>
+    <p class="text-slate-500 text-sm">Generated Excel outputs</p>
+  </div>
+  <div class="flex gap-2">
+    <a href="/projects/{{ project.id }}/inputs" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 text-sm">← Inputs</a>
+    <a href="/" class="px-4 py-2 text-slate-600 text-sm hover:underline">All projects</a>
+  </div>
+</div>
+
+{% if started_id %}
+<div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-900">
+  Generation started. Status updates automatically below.
+</div>
+{% endif %}
+
+<div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+  {% if outputs %}
+  <table class="w-full text-left text-sm">
+    <thead class="bg-slate-50 text-slate-600">
+      <tr>
+        <th class="p-3">ID</th>
+        <th class="p-3">Status</th>
+        <th class="p-3">Created</th>
+        <th class="p-3"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for o in outputs %}
+      <tr class="border-t border-slate-100">
+        <td class="p-3">{{ o.id }}</td>
+        <td class="p-3">
+          <span class="font-medium {% if o.status == 'completed' %}text-green-700{% elif o.status == 'failed' %}text-red-700{% else %}text-amber-700{% endif %}">{{ o.status }}</span>
+          {% if o.error_message %}<div class="text-xs text-red-600 mt-1">{{ o.error_message }}</div>{% endif %}
+        </td>
+        <td class="p-3 text-slate-500">{{ o.created_at.strftime("%Y-%m-%d %H:%M") if o.created_at else "" }}</td>
+        <td class="p-3">
+          {% if o.status == 'completed' %}
+          <a href="/outputs/{{ o.id }}/download" class="text-red-700 font-medium hover:underline">Download .xlsx</a>
+          {% elif o.status in ('pending', 'running') %}
+          <span class="text-slate-500 text-xs" id="status-{{ o.id }}"
+            hx-get="/projects/{{ project.id }}/outputs/{{ o.id }}/status"
+            hx-trigger="load delay:1s, every 3s"
+            hx-swap="innerHTML">Working…</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="p-6 text-slate-500">No generations yet. Use <strong>Generate estimate</strong> on the Inputs page.</p>
+  {% endif %}
+</div>
+{% endblock %}

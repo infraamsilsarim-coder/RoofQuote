@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Generated Results — RoofQuote AI{% endblock %}
+{% block content %}
+<div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-slate-800">Generated Results</h1>
+    <p class="text-slate-500 text-sm">All estimate runs across your projects</p>
+  </div>
+  <a href="/" class="px-4 py-2 text-slate-600 text-sm hover:underline">← All projects</a>
+</div>
+
+<div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+  {% if results %}
+  <table class="w-full text-left text-sm">
+    <thead class="bg-slate-50 text-slate-600">
+      <tr>
+        <th class="p-3">Project</th>
+        <th class="p-3">Run ID</th>
+        <th class="p-3">Status</th>
+        <th class="p-3">Created</th>
+        <th class="p-3"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in results %}
+      {% set o = row.output %}
+      {% set p = row.project %}
+      <tr class="border-t border-slate-100 hover:bg-slate-50">
+        <td class="p-3 font-medium">
+          <a href="/projects/{{ p.id }}/inputs" class="text-slate-900 hover:text-red-700 hover:underline">{{ p.name }}</a>
+        </td>
+        <td class="p-3 text-slate-600">{{ o.id }}</td>
+        <td class="p-3">
+          <span class="font-medium {% if o.status == 'completed' %}text-green-700{% elif o.status == 'failed' %}text-red-700{% else %}text-amber-700{% endif %}">{{ o.status }}</span>
+          {% if o.error_message %}<div class="text-xs text-red-600 mt-1 max-w-md">{{ o.error_message }}</div>{% endif %}
+        </td>
+        <td class="p-3 text-slate-500">{{ o.created_at.strftime("%Y-%m-%d %H:%M") if o.created_at else "" }}</td>
+        <td class="p-3">
+          {% if o.status == 'completed' %}
+          <a href="/outputs/{{ o.id }}/download" class="text-red-700 font-medium hover:underline">Download .xlsx</a>
+          {% elif o.status in ('pending', 'running') %}
+          <span class="text-slate-500 text-xs" id="status-{{ o.id }}"
+            hx-get="/projects/{{ p.id }}/outputs/{{ o.id }}/status"
+            hx-trigger="load delay:1s, every 3s"
+            hx-swap="innerHTML">Working…</span>
+          {% endif %}
+          <div class="mt-1">
+            <a href="/projects/{{ p.id }}/results" class="text-xs text-slate-500 hover:underline">Project results</a>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="p-6 text-slate-500">No generations yet. Open a project, fill <strong>Inputs</strong>, and run <strong>Generate estimate</strong>.</p>
+  {% endif %}
+</div>
+{% endblock %}
