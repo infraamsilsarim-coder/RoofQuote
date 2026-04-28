@@ -147,6 +147,19 @@ def create_project(
     return RedirectResponse(f"/projects/{p.id}/inputs", status_code=302)
 
 
+@router.post("/projects/{project_id}/delete")
+def delete_project(project_id: int, request: Request, db: Session = Depends(get_db)):
+    user = session_user(request, db)
+    if not user:
+        return _redirect_login()
+    project = _get_project_for_user(db, user, project_id)
+    if not project:
+        return RedirectResponse("/", status_code=302)
+    db.delete(project)
+    db.commit()
+    return RedirectResponse("/", status_code=302)
+
+
 @router.get("/master-pricing", response_class=HTMLResponse)
 def master_pricing_page(
     request: Request,
@@ -595,10 +608,18 @@ def output_status_fragment(
     out = db.get(GeneratedOutput, output_id)
     if not out or out.project_id != project.id:
         return HTMLResponse("")
+    progress = None
+    try:
+        if out.json_artifacts:
+            payload = json.loads(out.json_artifacts)
+            if isinstance(payload, dict):
+                progress = payload.get("progress")
+    except Exception:
+        progress = None
     return templates.TemplateResponse(
         request,
         "partials/output_status.html",
-        {"request": request, "out": out},
+        {"request": request, "out": out, "progress": progress},
     )
 
 

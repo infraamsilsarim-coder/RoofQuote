@@ -46,6 +46,7 @@
         <th class="p-3">Code</th>
         <th class="p-3">Created</th>
         <th class="p-3">Open</th>
+        <th class="p-3 text-right">Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -61,6 +62,12 @@
             <a href="/projects/{{ p.id }}/inputs" class="text-red-700 font-medium hover:underline">Inputs</a>
             <a href="/projects/{{ p.id }}/results" class="text-slate-700 font-medium hover:underline">Results</a>
           </div>
+        </td>
+        <td class="p-3 text-right">
+          <form method="post" action="/projects/{{ p.id }}/delete"
+            onsubmit="return confirm('Delete this project and all its uploads/outputs? This cannot be undone.');">
+            <button type="submit" class="text-red-700 font-medium hover:underline">Delete</button>
+          </form>
         </td>
       </tr>
       {% endfor %}

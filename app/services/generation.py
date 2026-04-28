@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from typing import Any
 
 from sqlalchemy import func, select
@@ -71,6 +72,27 @@ def run_generation_job(db: Session, output_id: int) -> None:
     out.status = "running"
     db.commit()
 
+    def _set_progress(message: str, *, batches_done: int = 0, batches_total: int = 0) -> None:
+        """Best-effort progress updates for the status UI (no artifacts payload here)."""
+        try:
+            outp = db.get(GeneratedOutput, output_id)
+            if not outp or outp.status != "running":
+                return
+            outp.json_artifacts = json.dumps(
+                {
+                    "version": 2,
+                    "progress": {
+                        "message": message,
+                        "batches_done": batches_done,
+                        "batches_total": batches_total,
+                    },
+                },
+                ensure_ascii=False,
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+
     try:
         prompt_path = get_settings().prompt_path
         system_prompt = prompt_path.read_text(encoding="utf-8")
@@ -130,6 +152,7 @@ def run_generation_job(db: Session, output_id: int) -> None:
 
     batch_size = 5
     total_batches = (len(photos) + batch_size - 1) // batch_size
+    _set_progress("Starting LLM processing", batches_done=0, batches_total=total_batches)
     logger.info(
         "generation: start output_id=%s project_id=%s photos=%s batches=%s batch_size=%s",
         output_id,
@@ -141,6 +164,13 @@ def run_generation_job(db: Session, output_id: int) -> None:
     for start in range(0, len(photos), batch_size):
         batch = photos[start : start + batch_size]
         batch_num = (start // batch_size) + 1
+        img_start = start + 1
+        img_end = start + len(batch)
+        if img_start == img_end:
+            msg = f"Processing image {img_start}"
+        else:
+            msg = f"Processing images {img_start} to {img_end}"
+        _set_progress(msg, batches_done=batch_num - 1, batches_total=total_batches)
         req_photos: list[dict[str, Any]] = []
         for idx, photo in enumerate(batch, start=1):
             req_photos.append(
@@ -212,7 +242,9 @@ def run_generation_job(db: Session, output_id: int) -> None:
             ),
             len(excel_results),
         )
+        _set_progress(msg, batches_done=batch_num, batches_total=total_batches)
 
+    _set_progress("Processing Sheet Creation", batches_done=total_batches, batches_total=total_batches)
     address = _address_for_project(project)
     try:
         xlsx_bytes = build_estimate_workbook(
@@ -228,11 +260,24 @@ def run_generation_job(db: Session, output_id: int) -> None:
         _fail(db, output_id, f"Excel build failed: {e}")
         return
 
+    _set_progress("Finalizing Sheet", batches_done=total_batches, batches_total=total_batches)
     out = db.get(GeneratedOutput, output_id)
     if out:
         out.status = "completed"
         out.xlsx_blob = xlsx_bytes
-        out.json_artifacts = json.dumps(artifacts, ensure_ascii=False)
+        # Store final artifacts and final progress snapshot.
+        out.json_artifacts = json.dumps(
+            {
+                "version": 2,
+                "progress": {
+                    "message": "Completed",
+                    "batches_done": total_batches,
+                    "batches_total": total_batches,
+                },
+                "artifacts": artifacts,
+            },
+            ensure_ascii=False,
+        )
         out.error_message = None
         db.commit()
 
