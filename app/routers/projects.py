@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 from datetime import datetime
 from io import BytesIO
@@ -44,6 +45,7 @@ from app.templates_env import templates
 
 router = APIRouter(tags=["projects"])
 MAX_PHOTOS = 25
+logger = logging.getLogger(__name__)
 
 # region agent log
 _DBG_LOG = Path(__file__).resolve().parents[2] / "debug-e4de73.log"
@@ -528,12 +530,47 @@ async def project_generate(
     persist_err = await persist_project_uploads_from_form(db, project, form)
     _debug_generate_log("after_persist", "H2", {"project_id": project.id, "persist_err": persist_err})
     if persist_err:
+        logger.info(
+            "generate: persist failed project_id=%s user_id=%s err=%s",
+            project.id,
+            user.id,
+            persist_err,
+        )
         return RedirectResponse(f"/projects/{project_id}/inputs?err={persist_err}", status_code=302)
     db.refresh(project)
     err = validate_project_ready_for_generate(project, db)
     _debug_generate_log("after_validate", "H3", {"project_id": project.id, "validate_err": err})
     if err:
+        logger.info(
+            "generate: validation failed project_id=%s user_id=%s err=%s",
+            project.id,
+            user.id,
+            err,
+        )
         return RedirectResponse(f"/projects/{project_id}/inputs?err={err}", status_code=302)
+
+    # Basic generate logging (no file contents).
+    iroof_present = any((f.kind == "iroof") for f in (project.files or []))
+    notes_pdf_present = any((f.kind == "notes_pdf") for f in (project.files or []))
+    notes_docx_present = any((f.kind == "notes_docx") for f in (project.files or []))
+    photo_count = db.scalar(
+        select(func.count()).select_from(ProjectPhoto).where(ProjectPhoto.project_id == project.id)
+    ) or 0
+    master_vid = project.selected_master_version_id or project.master_editor_source_version_id
+    batch_size = 5
+    batch_count = (photo_count + batch_size - 1) // batch_size if photo_count else 0
+    logger.info(
+        "generate: queued project_id=%s user_id=%s photos=%s batches=%s iroof=%s master_version_id=%s notes_text_len=%s notes_pdf=%s notes_docx=%s",
+        project.id,
+        user.id,
+        photo_count,
+        batch_count,
+        iroof_present,
+        master_vid,
+        len(project.notes_text or ""),
+        notes_pdf_present,
+        notes_docx_present,
+    )
     out = GeneratedOutput(project_id=project.id, status="pending")
     db.add(out)
     db.commit()

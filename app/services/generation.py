@@ -16,7 +16,7 @@ from app.models import (
 )
 from app.services.estimate_workbook import build_estimate_workbook
 from app.services.notes_extract import extract_docx_text, extract_pdf_text
-from app.services.openrouter_client import analyze_site_photo
+from app.services.openrouter_client import analyze_site_photos_batch, analyze_site_photo
 from app.services.pricing_grid import grid_to_xlsx_bytes, normalize_grid
 from app.services.xlsx_text import xlsx_bytes_as_text
 
@@ -117,29 +117,101 @@ def run_generation_job(db: Session, output_id: int) -> None:
     u = db.get(User, project.user_id)
     prepared_by = u.username if u else "Estimator"
 
-    results: list[dict[str, Any]] = []
-    for photo in photos:
+    # LLM calls are batched: up to 5 images per request.
+    # The updated prompt returns a JSON array with one wrapper object per image:
+    # { image_id, discard, discard_reason, estimate }.
+    #
+    # For Excel output, we keep only deficiency estimates (discard=false and estimate != null),
+    # so the downstream workbook generation remains compatible with the existing deficiency schema.
+    excel_results: list[dict[str, Any]] = []
+    # Photo bytes keyed by DB id for embedding thumbnails in Excel.
+    photos_by_id: dict[int, bytes] = {}
+    artifacts: list[dict[str, Any]] = []
+
+    batch_size = 5
+    total_batches = (len(photos) + batch_size - 1) // batch_size
+    logger.info(
+        "generation: start output_id=%s project_id=%s photos=%s batches=%s batch_size=%s",
+        output_id,
+        project.id,
+        len(photos),
+        total_batches,
+        batch_size,
+    )
+    for start in range(0, len(photos), batch_size):
+        batch = photos[start : start + batch_size]
+        batch_num = (start // batch_size) + 1
+        req_photos: list[dict[str, Any]] = []
+        for idx, photo in enumerate(batch, start=1):
+            req_photos.append(
+                {
+                    "image_id": f"img_{idx}",
+                    "image_bytes": photo.data,
+                    "image_mime": photo.mime,
+                    "filename": photo.filename,
+                    "photo_db_id": photo.id,
+                }
+            )
+
         try:
-            obj = analyze_site_photo(
+            wrappers = analyze_site_photos_batch(
                 settings=settings,
                 system_prompt=system_prompt,
                 iroof_pdf_bytes=iroof.data,
                 master_pricing_text=pricing_text,
-                image_bytes=photo.data,
-                image_mime=photo.mime,
+                photos=req_photos,
                 notes_combined=notes_combined,
                 prepared_by_username=prepared_by,
             )
-            results.append(obj)
         except Exception as e:
-            logger.exception("OpenRouter call failed for photo %s", photo.id)
-            results.append(
-                {
-                    "status": "model_error",
-                    "notes": str(e),
-                    "photo_filename": photo.filename,
-                }
-            )
+            logger.exception("OpenRouter batch call failed for photos %s..%s", start, start + len(batch) - 1)
+            for p in req_photos:
+                artifacts.append(
+                    {
+                        "image_id": p.get("image_id"),
+                        "discard": True,
+                        "discard_reason": f"model_error: {e}",
+                        "estimate": None,
+                        "photo_filename": p.get("filename"),
+                        "photo_db_id": p.get("photo_db_id"),
+                    }
+                )
+            continue
+
+        # Join model wrappers back to the underlying photos for traceability.
+        for i, w in enumerate(wrappers):
+            p = req_photos[i]
+            wrapped = dict(w)
+            wrapped.setdefault("image_id", p.get("image_id"))
+            wrapped["photo_filename"] = p.get("filename")
+            wrapped["photo_db_id"] = p.get("photo_db_id")
+            artifacts.append(wrapped)
+
+            discard = bool(wrapped.get("discard"))
+            estimate = wrapped.get("estimate")
+            if not discard and isinstance(estimate, dict) and estimate:
+                # Keep the estimate schema intact, but add a private reference field for Excel thumbnail embedding.
+                est = dict(estimate)
+                photo_db_id = p.get("photo_db_id")
+                if isinstance(photo_db_id, int):
+                    est["_photo_db_id"] = photo_db_id
+                    photos_by_id[photo_db_id] = p.get("image_bytes") or b""
+                excel_results.append(est)
+
+        logger.info(
+            "generation: batch_done output_id=%s project_id=%s batch=%s/%s photos_in_batch=%s kept_estimates=%s total_kept=%s",
+            output_id,
+            project.id,
+            batch_num,
+            total_batches,
+            len(batch),
+            sum(
+                1
+                for w in wrappers
+                if isinstance(w, dict) and (not bool(w.get("discard"))) and isinstance(w.get("estimate"), dict)
+            ),
+            len(excel_results),
+        )
 
     address = _address_for_project(project)
     try:
@@ -147,7 +219,8 @@ def run_generation_job(db: Session, output_id: int) -> None:
             display_code=project.display_code or project.name,
             prepared_by=prepared_by,
             address=address,
-            results=results,
+            results=excel_results,
+            photos_by_id=photos_by_id,
         )
     except Exception as e:
         logger.exception("Workbook build failed")
@@ -158,7 +231,7 @@ def run_generation_job(db: Session, output_id: int) -> None:
     if out:
         out.status = "completed"
         out.xlsx_blob = xlsx_bytes
-        out.json_artifacts = json.dumps(results, ensure_ascii=False)
+        out.json_artifacts = json.dumps(artifacts, ensure_ascii=False)
         out.error_message = None
         db.commit()
 

@@ -3,14 +3,36 @@ from io import BytesIO
 from typing import Any
 
 from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
+from PIL import Image as PILImage
 
 
 RED_TITLE = Font(color="00FF0000", bold=True, size=16)
 BLACK_BOLD = Font(bold=True)
 UNDERLINE_BOLD = Font(bold=True, underline="single")
 HEADING_DEF = Font(bold=True, size=13)
+
+THUMB_MAX_W_PX = 220
+THUMB_MAX_H_PX = 160
+
+
+def _add_thumbnail(ws, *, anchor_cell: str, image_bytes: bytes) -> None:
+    if not image_bytes:
+        return
+    try:
+        pil = PILImage.open(BytesIO(image_bytes))
+        pil = pil.convert("RGB")
+        pil.thumbnail((THUMB_MAX_W_PX, THUMB_MAX_H_PX))
+        out = BytesIO()
+        pil.save(out, format="PNG", optimize=True)
+        out.seek(0)
+        xl_img = XLImage(out)
+        ws.add_image(xl_img, anchor_cell)
+    except Exception:
+        # Thumbnail embedding is best-effort; avoid failing workbook creation.
+        return
 
 
 def _merge_title_row(ws, row: int, text: str, col_span: int = 8) -> int:
@@ -31,7 +53,8 @@ def write_metadata(
     col_span: int = 8,
 ) -> int:
     r = start_row
-    ws.cell(row=r, column=1, value=display_code or "PROJECT")
+    code = display_code or "PROJECT"
+    ws.cell(row=r, column=1, value=f"Project: {code}")
     ws.cell(row=r, column=1).font = Font(bold=True, size=18)
     r += 1
     r = _merge_title_row(ws, r, "Ranger Roofing and Solar", col_span)
@@ -113,7 +136,7 @@ def _is_compact_deficiency_schema(obj: dict[str, Any]) -> bool:
 
 
 def _write_compact_deficiency(
-    ws, r: int, obj: dict[str, Any], deficiency_number: int
+    ws, r: int, obj: dict[str, Any], deficiency_number: int, *, photos_by_id: dict[int, bytes] | None = None
 ) -> int:
     """Write one LLM JSON block: heading Deficiency #N, then new schema fields."""
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=6)
@@ -174,6 +197,7 @@ def _write_compact_deficiency(
 
     sow = obj.get("scope_of_work")
     if sow:
+        sow_start_row = r
         ws.cell(row=r, column=1, value="Scope of work").font = BLACK_BOLD
         r += 1
         if isinstance(sow, list):
@@ -187,6 +211,16 @@ def _write_compact_deficiency(
             for i, step in enumerate(sow.get("steps") or [], start=1):
                 ws.cell(row=r, column=1, value=f"{i}. {step}")
                 r += 1
+
+        # Optional: add the source photo thumbnail to the right of scope of work.
+        if photos_by_id is not None:
+            photo_db_id = obj.get("_photo_db_id")
+            if isinstance(photo_db_id, int):
+                img_bytes = photos_by_id.get(photo_db_id) or b""
+                # Anchor 3 columns left (H -> E) beside the scope section.
+                _add_thumbnail(ws, anchor_cell=f"E{sow_start_row}", image_bytes=img_bytes)
+                # Give the first scope row extra height to better fit the thumbnail.
+                ws.row_dimensions[sow_start_row].height = 120
 
     r += 1
     return r
@@ -329,6 +363,7 @@ def build_estimate_workbook(
     prepared_by: str,
     address: str,
     results: list[dict[str, Any]],
+    photos_by_id: dict[int, bytes] | None = None,
 ) -> bytes:
     wb = Workbook()
     ws = wb.active
@@ -342,7 +377,7 @@ def build_estimate_workbook(
             continue
         if _is_compact_deficiency_schema(obj):
             deficiency_index += 1
-            r = _write_compact_deficiency(ws, r, obj, deficiency_index)
+            r = _write_compact_deficiency(ws, r, obj, deficiency_index, photos_by_id=photos_by_id)
         else:
             r = _write_image_result_block(ws, r, i, obj)
 
