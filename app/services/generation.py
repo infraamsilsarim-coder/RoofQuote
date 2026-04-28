@@ -216,7 +216,8 @@ def run_generation_job(db: Session, output_id: int) -> None:
     address = _address_for_project(project)
     try:
         xlsx_bytes = build_estimate_workbook(
-            display_code=project.display_code or project.name,
+            project_name=project.name,
+            project_code=project.display_code or "",
             prepared_by=prepared_by,
             address=address,
             results=excel_results,

@@ -47,14 +47,17 @@ def write_metadata(
     ws,
     start_row: int,
     *,
-    display_code: str,
+    project_name: str,
+    project_code: str,
     prepared_by: str,
     address: str,
     col_span: int = 8,
 ) -> int:
     r = start_row
-    code = display_code or "PROJECT"
-    ws.cell(row=r, column=1, value=f"Project: {code}")
+    name = (project_name or "").strip() or "PROJECT"
+    code = (project_code or "").strip()
+    header = f"Project: {name} {code}".strip() if code else f"Project: {name}"
+    ws.cell(row=r, column=1, value=header)
     ws.cell(row=r, column=1).font = Font(bold=True, size=18)
     r += 1
     r = _merge_title_row(ws, r, "Ranger Roofing and Solar", col_span)
@@ -359,7 +362,8 @@ def _write_image_result_block(ws, r: int, idx: int, obj: dict[str, Any]) -> int:
 
 def build_estimate_workbook(
     *,
-    display_code: str,
+    project_name: str,
+    project_code: str,
     prepared_by: str,
     address: str,
     results: list[dict[str, Any]],
@@ -369,7 +373,14 @@ def build_estimate_workbook(
     ws = wb.active
     assert ws is not None
     ws.title = "Estimate"
-    r = write_metadata(ws, 1, display_code=display_code, prepared_by=prepared_by, address=address)
+    r = write_metadata(
+        ws,
+        1,
+        project_name=project_name,
+        project_code=project_code,
+        prepared_by=prepared_by,
+        address=address,
+    )
 
     deficiency_index = 0
     for i, obj in enumerate(results):
