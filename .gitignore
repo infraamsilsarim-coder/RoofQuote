@@ -57,3 +57,5 @@ Thumbs.db
 
 # Project-specific logs
 debug-*.log
+
+tests/fixtures/
